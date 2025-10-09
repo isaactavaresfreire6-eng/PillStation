@@ -1,0 +1,42 @@
+name: abertura
+description: App para controle de medicamentos com ESP32
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Interface
+  cupertino_icons: ^1.0.2
+  
+  # MQTT
+  mqtt_client: ^10.2.0
+  
+  # Armazenamento local
+  shared_preferences: ^2.2.2
+  
+  # JSON
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.7
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/
+    - assets/nome.png
+    - assets/frasco.png
+    - assets/validade.png
+    - assets/doses.png
+    - assets/intervalo.png
+    - assets/Inicial.png
