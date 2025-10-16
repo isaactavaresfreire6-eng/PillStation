@@ -1,7 +1,7 @@
 // services/mqtt_service.dart
 import 'dart:convert';
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
+import 'package:mqtt_client/mqtt_browser_client.dart'; // Para Web
 import '../models/medicamento.dart';
 
 class MqttService {
@@ -9,7 +9,7 @@ class MqttService {
   factory MqttService() => _instance;
   MqttService._internal();
 
-  MqttServerClient? _client;
+  MqttClient? _client;
   bool _isConnected = false;
 
   // Topics MQTT
@@ -20,23 +20,27 @@ class MqttService {
   bool get isConnected => _isConnected;
 
   Future<bool> connect({
-    String broker = '192.168.1.100', // IP do seu broker Mosquitto
-    int port = 1883,
+    String broker = 'broker.hivemq.com',
+    int port = 8000, // ✅ HiveMQ WebSocket com CORS liberado
     String clientId = 'flutter_pillstation',
   }) async {
     try {
-      _client = MqttServerClient(broker, clientId);
+      // Cria cliente MQTT para navegador (WebSocket)
+      _client = MqttBrowserClient('ws://$broker', clientId);
       _client!.port = port;
-      _client!.keepAlivePeriod = 20;
+      _client!.keepAlivePeriod = 60;
       _client!.autoReconnect = true;
       _client!.onAutoReconnect = _onAutoReconnect;
       _client!.onConnected = _onConnected;
       _client!.onDisconnected = _onDisconnected;
 
-      print('🔄 Conectando ao broker MQTT: $broker:$port');
+      _client!.logging(on: true);
+
+      print('🔄 Conectando ao broker MQTT (WebSocket): ws://$broker:$port');
 
       final connMessage = MqttConnectMessage()
-          .withClientIdentifier(clientId)
+          .withClientIdentifier(
+              clientId + '_' + DateTime.now().millisecondsSinceEpoch.toString())
           .withWillTopic('pillstation/status')
           .withWillMessage('offline')
           .startClean()
@@ -106,15 +110,14 @@ class MqttService {
     }
 
     try {
-      // Converte horário do intervalo (HH:MM) para milissegundos
+      // CORREÇÃO: Converte o intervalo (HH:MM) para milissegundos
       final intervaloDoses = _converterHorarioParaMs(medicamento.horario);
 
       final payload = json.encode({
         'nome': medicamento.titulo,
-        'dose': medicamento.dose, // formato HH:MM da primeira dose
-        'horario': medicamento.dose, // primeira dose
+        'intervalo': intervaloDoses, // ✅ ENVIA EM MILISSEGUNDOS
+        'dose': medicamento.dose, // Primeira dose (HH:MM)
         'validade': medicamento.validade,
-        'intervalo': intervaloDoses, // em milissegundos como o ESP32 espera
         'ativo': !medicamento.estaVencido,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
@@ -132,6 +135,9 @@ class MqttService {
       );
 
       print('✅ Medicamento enviado com sucesso!');
+      print('   Nome: ${medicamento.titulo}');
+      print(
+          '   Intervalo: $intervaloDoses ms (${intervaloDoses / 3600000} horas)');
     } catch (e) {
       print('❌ Erro ao enviar medicamento: $e');
     }
