@@ -1,7 +1,7 @@
 // services/mqtt_service.dart
 import 'dart:convert';
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_browser_client.dart'; // Para Web
+import 'package:mqtt_client/mqtt_server_client.dart';
 import '../models/medicamento.dart';
 
 class MqttService {
@@ -9,7 +9,7 @@ class MqttService {
   factory MqttService() => _instance;
   MqttService._internal();
 
-  MqttClient? _client;
+  MqttServerClient? _client;
   bool _isConnected = false;
 
   // Topics MQTT
@@ -20,13 +20,12 @@ class MqttService {
   bool get isConnected => _isConnected;
 
   Future<bool> connect({
-    String broker = 'broker.hivemq.com',
-    int port = 8000, // ✅ HiveMQ WebSocket com CORS liberado
+    String broker = 'test.mosquitto.org', // Broker público para teste
+    int port = 1883,
     String clientId = 'flutter_pillstation',
   }) async {
     try {
-      // Cria cliente MQTT para navegador (WebSocket)
-      _client = MqttBrowserClient('ws://$broker', clientId);
+      _client = MqttServerClient(broker, clientId);
       _client!.port = port;
       _client!.keepAlivePeriod = 60;
       _client!.autoReconnect = true;
@@ -34,9 +33,11 @@ class MqttService {
       _client!.onConnected = _onConnected;
       _client!.onDisconnected = _onDisconnected;
 
+      // Configurações adicionais para conectividade
       _client!.logging(on: true);
+      _client!.onBadCertificate = (dynamic certificate) => true;
 
-      print('🔄 Conectando ao broker MQTT (WebSocket): ws://$broker:$port');
+      print('🔄 Conectando ao broker MQTT: $broker:$port');
 
       final connMessage = MqttConnectMessage()
           .withClientIdentifier(
