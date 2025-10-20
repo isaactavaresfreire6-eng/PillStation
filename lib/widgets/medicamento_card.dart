@@ -80,8 +80,8 @@ class MedicamentoCard extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       todasCompletas
-                          ? 'Doses completas'
-                          : 'Próxima: $proximaDose',
+                          ? 'Doses completas hoje'
+                          : 'Próxima dose: $proximaDose',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,

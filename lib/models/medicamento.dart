@@ -34,9 +34,20 @@ class Medicamento {
     }
   }
 
-  // Converte horário "HH:mm" para minutos
+  // Converte horário "HH:mm" ou "Xh Ym" para minutos
   int _horarioParaMinutos(String horario) {
     try {
+      // Formato "Xh Ym" (ex: "8h 30m")
+      if (horario.contains('h')) {
+        final partes = horario.replaceAll(' ', '').split('h');
+        final horas = int.parse(partes[0]);
+        final minutos = partes.length > 1 && partes[1].isNotEmpty
+            ? int.parse(partes[1].replaceAll('m', ''))
+            : 0;
+        return horas * 60 + minutos;
+      }
+
+      // Formato "HH:mm" (ex: "08:00")
       final partes = horario.split(':');
       if (partes.length == 2) {
         final horas = int.parse(partes[0]);
