@@ -161,7 +161,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
                           asset: "assets/doses.png",
                           icon: Icons.medical_information,
                           titulo: "Primeira dose",
-                          placeholder: "Horário (ex: 08:30)",
+                          placeholder: "Primeio Horário de ingestão (ex: 08:30)",
                           controller: primeiraDoseController,
                           formatters: [
                             FilteringTextInputFormatter.digitsOnly,
@@ -174,7 +174,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
                           asset: "assets/intervalo.png",
                           icon: Icons.access_time,
                           titulo: "Intervalo de doses",
-                          placeholder: "Intervalo (ex: 08:00)",
+                          placeholder: "Intervalo entre as doses (ex: 08:00)",
                           controller: intervaloController,
                           formatters: [
                             FilteringTextInputFormatter.digitsOnly,

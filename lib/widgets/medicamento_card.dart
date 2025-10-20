@@ -5,10 +5,13 @@ class MedicamentoCard extends StatelessWidget {
   final Medicamento medicamento;
 
   const MedicamentoCard({Key? key, required this.medicamento})
-    : super(key: key);
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final proximaDose = medicamento.proximaDose;
+    final todasCompletas = medicamento.todasDosesCompletas;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -24,6 +27,7 @@ class MedicamentoCard extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Ícone do medicamento
           Container(
             width: 50,
             height: 50,
@@ -35,46 +39,55 @@ class MedicamentoCard extends StatelessWidget {
                 return Icon(
                   Icons.medication,
                   size: 40,
-                  color: Colors.blue.shade600,
+                  color: todasCompletas
+                      ? Colors.grey.shade600
+                      : Colors.blue.shade600,
                 );
               },
             ),
           ),
           const SizedBox(width: 16),
+
+          // Nome do medicamento
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   medicamento.titulo,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF2D3748),
+                    color: todasCompletas
+                        ? Colors.grey.shade700
+                        : const Color(0xFF2D3748),
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 const SizedBox(height: 4),
+
+                // Próxima dose ou mensagem de completo
                 Row(
                   children: [
-                    Text(
-                      medicamento.dose,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF4A5568),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    const Icon(
+                    Icon(
                       Icons.access_time,
                       size: 18,
-                      color: Color(0xFF718096),
+                      color: todasCompletas
+                          ? Colors.grey.shade600
+                          : const Color(0xFF718096),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     Text(
-                      medicamento.horario,
-                      style: const TextStyle(
+                      todasCompletas
+                          ? 'Doses completas'
+                          : 'Próxima: $proximaDose',
+                      style: TextStyle(
                         fontSize: 16,
-                        color: Color(0xFF718096),
+                        fontWeight: FontWeight.w500,
+                        color: todasCompletas
+                            ? Colors.grey.shade600
+                            : const Color(0xFF4A5568),
                       ),
                     ),
                   ],
@@ -82,6 +95,21 @@ class MedicamentoCard extends StatelessWidget {
               ],
             ),
           ),
+
+          // Indicador visual de status
+          if (todasCompletas)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade600,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
         ],
       ),
     );

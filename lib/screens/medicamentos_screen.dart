@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/medicamento.dart';
 import '../widgets/medicamento_card.dart';
@@ -21,11 +22,25 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
   bool _mqttConnected = false;
   String _statusConnection = 'Desconectado';
 
+  Timer? _updateTimer; // Timer para atualizar os cards a cada minuto
+
   @override
   void initState() {
     super.initState();
     _loadMedicamentos();
     _connectMqtt();
+    _iniciarAtualizacaoAutomatica();
+  }
+
+  // Inicia timer para atualizar os cards a cada minuto
+  void _iniciarAtualizacaoAutomatica() {
+    _updateTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          // Força rebuild para atualizar "próxima dose"
+        });
+      }
+    });
   }
 
   Future<void> _loadMedicamentos() async {
@@ -66,7 +81,6 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await prefs.setStringList('medicamentos', medicamentosJson);
 
-      // Envia para o ESP32 via MQTT
       if (_mqttConnected) {
         await _mqttService.enviarMedicamentos(medicamentos);
       }
@@ -81,7 +95,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     });
 
     final connected = await _mqttService.connect(
-      broker: '192.168.1.100', // Substitua pelo IP do seu broker
+      broker: '192.168.1.100',
       port: 1883,
     );
 
@@ -91,10 +105,9 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     });
 
     if (connected && medicamentos.isNotEmpty) {
-      // Reenvia medicamentos existentes para o ESP32
       for (int i = 0; i < medicamentos.length; i++) {
         await _mqttService.enviarMedicamento(medicamentos[i]);
-        await Future.delayed(Duration(milliseconds: 500)); // Evita spam
+        await Future.delayed(Duration(milliseconds: 500));
       }
     }
   }
@@ -106,65 +119,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header com status MQTT
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Color(0xFF2C5282),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                ),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Medicamentos',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _mqttConnected ? Icons.wifi : Icons.wifi_off,
-                        color: _mqttConnected ? Colors.green : Colors.red,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'ESP32: $_statusConnection',
-                        style: TextStyle(
-                          color: _mqttConnected
-                              ? Colors.green.shade200
-                              : Colors.red.shade200,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (!_mqttConnected) ...[
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: _connectMqtt,
-                          child: const Icon(
-                            Icons.refresh,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _buildHeader(),
             const SizedBox(height: 20),
-
-            // Lista de medicamentos OU mensagem quando vazia
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -198,6 +154,64 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
               backgroundColor: const Color(0xFF4A90E2),
               child: const Icon(Icons.add, color: Colors.white, size: 32),
             ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Color(0xFF2C5282),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        children: [
+          const Text(
+            'Medicamentos',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _mqttConnected ? Icons.wifi : Icons.wifi_off,
+                color: _mqttConnected ? Colors.green : Colors.red,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'ESP32: $_statusConnection',
+                style: TextStyle(
+                  color: _mqttConnected
+                      ? Colors.green.shade200
+                      : Colors.red.shade200,
+                  fontSize: 14,
+                ),
+              ),
+              if (!_mqttConnected) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _connectMqtt,
+                  child: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -260,11 +274,10 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await _saveMedicamentos();
 
-      // Envia medicamento individual para o ESP32
       if (_mqttConnected) {
         await _mqttService.enviarMedicamento(novoMed);
-        _mostrarSnackBar(
-            'Medicamento adicionado e enviado para o Dispositivo!', Colors.green);
+        _mostrarSnackBar('Medicamento adicionado e enviado para o Dispositivo!',
+            Colors.green);
       } else {
         _mostrarSnackBar(
             'Medicamento adicionado (será sincronizado quando conectar)',
@@ -288,21 +301,16 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     if (resultado != null) {
       setState(() {
         if (resultado == 'excluir') {
-          // Remove medicamento do ESP32 usando o índice
           if (_mqttConnected) {
             _mqttService.excluirMedicamento(index);
           }
-
           medicamentos.removeAt(index);
           _mostrarSnackBar('Medicamento removido!', Colors.orange);
         } else if (resultado is Medicamento) {
           medicamentos[index] = resultado;
-
-          // Envia medicamento atualizado
           if (_mqttConnected) {
             _mqttService.enviarMedicamento(resultado);
           }
-
           _mostrarSnackBar('Medicamento atualizado!', Colors.blue);
         }
       });
@@ -350,6 +358,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
   @override
   void dispose() {
+    _updateTimer?.cancel(); // Cancela o timer ao sair da tela
     _mqttService.disconnect();
     super.dispose();
   }
