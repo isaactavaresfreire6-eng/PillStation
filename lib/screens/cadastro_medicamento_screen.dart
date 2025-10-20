@@ -161,7 +161,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
                           asset: "assets/doses.png",
                           icon: Icons.medical_information,
                           titulo: "Primeira dose",
-                          placeholder: "Primeio Horário de ingestão (ex: 08:30)",
+                          placeholder: "Primeio horário de ingestão (ex: 08:30)",
                           controller: primeiraDoseController,
                           formatters: [
                             FilteringTextInputFormatter.digitsOnly,
