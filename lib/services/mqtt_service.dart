@@ -80,8 +80,7 @@ class MqttService {
         print('========================================\n');
         return true;
       } else {
-        print(
-            '❌ Falha na conexão. Estado: ${_client?.connectionStatus?.state}');
+        print('❌ Falha na conexão. Estado: ${_client?.connectionStatus?.state}');
         _isConnected = false;
         return false;
       }
@@ -175,8 +174,7 @@ class MqttService {
   }
 
   /// Envia um medicamento individual
-  Future<void> enviarMedicamento(Medicamento medicamento,
-      {int? posicao}) async {
+  Future<void> enviarMedicamento(Medicamento medicamento, {int? posicao}) async {
     if (!_isConnected || _client == null) {
       throw Exception('MQTT não conectado! Conecte primeiro ao broker.');
     }
@@ -198,8 +196,7 @@ class MqttService {
       if (posicao != null) print('   Posição: $posicao');
       print('   Nome: ${medicamento.titulo}');
       print('   Horário: ${medicamento.horario}');
-      print(
-          '   Intervalo: ${intervaloMs}ms (${(intervaloMs / 3600000).toStringAsFixed(1)}h)');
+      print('   Intervalo: ${intervaloMs}ms (${(intervaloMs / 3600000).toStringAsFixed(1)}h)');
       print('   Ativo: ${!medicamento.estaVencido}');
 
       final builder = MqttClientPayloadBuilder();

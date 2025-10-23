@@ -80,6 +80,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       _statusConnection = 'Conectando...';
     });
 
+    print('\n🔄 Iniciando conexão MQTT do aplicativo...');
+
     // Conecta ao broker público HiveMQ
     final connected = await _mqttService.connect(
       broker: 'broker.hivemq.com',
@@ -91,9 +93,20 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       _statusConnection = connected ? 'Conectado' : 'Erro de conexão';
     });
 
-    if (connected && medicamentos.isNotEmpty) {
-      // Reenvia medicamentos existentes para o ESP32 com suas posições
-      await _mqttService.enviarMedicamentos(medicamentos);
+    if (connected) {
+      print('✅ App conectado ao MQTT com sucesso!');
+
+      if (medicamentos.isNotEmpty) {
+        print(
+            '📤 Reenviando ${medicamentos.length} medicamentos para o ESP32...');
+        await Future.delayed(
+            const Duration(seconds: 2)); // Aguarda ESP32 se inscrever
+        await _mqttService.enviarMedicamentos(medicamentos);
+      } else {
+        print('ℹ️ Nenhum medicamento para enviar');
+      }
+    } else {
+      print('❌ Falha na conexão MQTT do app');
     }
   }
 
