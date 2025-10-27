@@ -1,5 +1,4 @@
 // services/mqtt_service.dart
-import 'dart:async';
 import 'dart:convert';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
@@ -12,94 +11,69 @@ class MqttService {
 
   MqttServerClient? _client;
   bool _isConnected = false;
-  StreamController<String>? _messageController;
 
   // Topics MQTT
   static const String topicMedicamentos = 'pillstation/medicamentos';
-  static const String topicStatusESP = 'pillstation/status/esp32';
-  static const String topicStatusApp = 'pillstation/status/app';
+  static const String topicStatus = 'pillstation/status';
+  static const String topicComando = 'pillstation/comando';
 
   bool get isConnected => _isConnected;
 
-  /// Conecta ao broker MQTT público
   Future<bool> connect({
-    String broker = 'broker.hivemq.com',
+    String broker = 'test.mosquitto.org', // Broker público para teste
     int port = 1883,
     String clientId = 'flutter_pillstation',
   }) async {
-    if (_isConnected && _client != null) {
-      print('✅ Já conectado ao broker MQTT');
-      return true;
-    }
-
     try {
-      print('\n========================================');
-      print('INICIANDO CONEXÃO MQTT');
-      print('========================================');
-      print('Broker: $broker:$port');
-      print('Cliente: $clientId');
-
-      await _cleanupConnection();
-
-      final uniqueClientId =
-          '${clientId}_${DateTime.now().millisecondsSinceEpoch}';
-      _client = MqttServerClient(broker, uniqueClientId);
+      _client = MqttServerClient(broker, clientId);
       _client!.port = port;
       _client!.keepAlivePeriod = 60;
       _client!.autoReconnect = true;
-      _client!.resubscribeOnAutoReconnect = true;
-
       _client!.onAutoReconnect = _onAutoReconnect;
       _client!.onConnected = _onConnected;
       _client!.onDisconnected = _onDisconnected;
 
-      _client!.logging(on: false);
-      _client!.setProtocolV311();
+      // Configurações adicionais para conectividade
+      _client!.logging(on: true);
+      _client!.onBadCertificate = (dynamic certificate) => true;
 
-      print('🔄 Conectando ao broker MQTT...');
+      print('🔄 Conectando ao broker MQTT: $broker:$port');
 
       final connMessage = MqttConnectMessage()
-          .withClientIdentifier(uniqueClientId)
-          .withWillTopic(topicStatusApp)
+          .withClientIdentifier(
+              clientId + '_' + DateTime.now().millisecondsSinceEpoch.toString())
+          .withWillTopic('pillstation/status')
           .withWillMessage('offline')
           .startClean()
-          .withWillQos(MqttQos.atLeastOnce);
+          .withWillQos(MqttQos.atMostOnce);
 
       _client!.connectionMessage = connMessage;
 
       await _client!.connect();
 
-      if (_client?.connectionStatus?.state == MqttConnectionState.connected) {
-        print('✅ CONECTADO AO BROKER MQTT!');
+      if (_client!.connectionStatus!.state == MqttConnectionState.connected) {
+        print('✅ Conectado ao broker MQTT!');
         _isConnected = true;
 
+        // Publica status online
         _publishStatus('online');
-        _subscribeToTopics();
-        _setupMessageStream();
 
-        print('========================================\n');
+        // Inscreve nos tópicos de resposta do ESP32
+        _client!.subscribe('$topicStatus/esp32', MqttQos.atMostOnce);
+
         return true;
-      } else {
-        print('❌ Falha na conexão. Estado: ${_client?.connectionStatus?.state}');
-        _isConnected = false;
-        return false;
       }
     } catch (e) {
       print('❌ Erro ao conectar MQTT: $e');
-      print('Verifique se:');
-      print('  1. O ESP32 está ligado e conectado à rede Isaac');
-      print('  2. O ESP32 consegue acessar a internet');
-      print('  3. Ambos estão usando o broker: $broker');
-      print('========================================\n');
-      _isConnected = false;
-      return false;
     }
+
+    _isConnected = false;
+    return false;
   }
 
   void _onConnected() {
     print('✅ Cliente MQTT conectado');
     _isConnected = true;
-    _publishStatus('online');
   }
 
   void _onDisconnected() {
@@ -108,96 +82,49 @@ class MqttService {
   }
 
   void _onAutoReconnect() {
-    print('🔄 Reconectando automaticamente ao broker...');
+    print('🔄 Reconectando automaticamente...');
   }
 
-  void _subscribeToTopics() {
-    if (_client == null) return;
-
-    try {
-      _client!.subscribe(topicStatusESP, MqttQos.atLeastOnce);
-      _client!.subscribe('$topicMedicamentos/resposta', MqttQos.atLeastOnce);
-      print('📥 Inscrito nos tópicos de resposta');
-    } catch (e) {
-      print('❌ Erro ao inscrever em tópicos: $e');
-    }
-  }
-
-  void _setupMessageStream() {
-    _messageController?.close();
-    _messageController = StreamController<String>.broadcast();
-
-    _client?.updates?.listen(
-      (List<MqttReceivedMessage<MqttMessage>> messages) {
-        for (final message in messages) {
-          final mqttMessage = message.payload as MqttPublishMessage;
-          final payload = MqttPublishPayload.bytesToStringAsString(
-            mqttMessage.payload.message,
-          );
-
-          print('\n📨 Mensagem recebida:');
-          print('Tópico: ${message.topic}');
-          print('Payload: $payload');
-
-          _messageController?.add(payload);
-        }
-      },
-      onError: (error) {
-        print('❌ Erro no stream de mensagens: $error');
-      },
-    );
-  }
-
-  /// Envia vários medicamentos com suas posições
   Future<void> enviarMedicamentos(List<Medicamento> medicamentos) async {
     if (!_isConnected || _client == null) {
-      throw Exception('MQTT não conectado! Conecte primeiro ao broker.');
+      print('❌ MQTT não conectado');
+      return;
     }
 
     try {
-      print('\n========================================');
-      print('📤 ENVIANDO ${medicamentos.length} MEDICAMENTOS');
-      print('========================================');
-
+      // Envia cada medicamento individualmente
       for (int i = 0; i < medicamentos.length; i++) {
-        print('\n📦 Medicamento ${i + 1}/${medicamentos.length} (Posição $i):');
-        await enviarMedicamento(medicamentos[i], posicao: i);
-        await Future.delayed(const Duration(milliseconds: 500));
+        await enviarMedicamento(medicamentos[i]);
+        // Pequeno delay para evitar spam de mensagens
+        await Future.delayed(Duration(milliseconds: 300));
       }
-
-      print('\n✅ Todos os medicamentos enviados!');
-      print('========================================\n');
+      print('✅ Todos os medicamentos enviados com sucesso!');
     } catch (e) {
       print('❌ Erro ao enviar medicamentos: $e');
-      rethrow;
     }
   }
 
-  /// Envia um medicamento individual
-  Future<void> enviarMedicamento(Medicamento medicamento, {int? posicao}) async {
+  Future<void> enviarMedicamento(Medicamento medicamento) async {
     if (!_isConnected || _client == null) {
-      throw Exception('MQTT não conectado! Conecte primeiro ao broker.');
+      print('❌ MQTT não conectado');
+      return;
     }
 
     try {
-      final intervaloMs = _converterHorarioParaMs(medicamento.horario);
+      // CORREÇÃO: Converte o intervalo (HH:MM) para milissegundos
+      final intervaloDoses = _converterHorarioParaMs(medicamento.horario);
 
       final payload = json.encode({
         'nome': medicamento.titulo,
-        'intervalo': intervaloMs,
-        'dose': medicamento.dose,
+        'intervalo': intervaloDoses, // ✅ ENVIA EM MILISSEGUNDOS
+        'dose': medicamento.dose, // Primeira dose (HH:MM)
         'validade': medicamento.validade,
         'ativo': !medicamento.estaVencido,
-        'posicao': posicao, // Adiciona posição do medicamento
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
-      print('📋 Dados:');
-      if (posicao != null) print('   Posição: $posicao');
-      print('   Nome: ${medicamento.titulo}');
-      print('   Horário: ${medicamento.horario}');
-      print('   Intervalo: ${intervaloMs}ms (${(intervaloMs / 3600000).toStringAsFixed(1)}h)');
-      print('   Ativo: ${!medicamento.estaVencido}');
+      print('📤 Enviando medicamento via MQTT:');
+      print(payload);
 
       final builder = MqttClientPayloadBuilder();
       builder.addString(payload);
@@ -208,29 +135,29 @@ class MqttService {
         builder.payload!,
       );
 
-      print('✅ Mensagem publicada em: $topicMedicamentos');
+      print('✅ Medicamento enviado com sucesso!');
+      print('   Nome: ${medicamento.titulo}');
+      print(
+          '   Intervalo: $intervaloDoses ms (${intervaloDoses / 3600000} horas)');
     } catch (e) {
       print('❌ Erro ao enviar medicamento: $e');
-      rethrow;
     }
   }
 
-  /// Exclui medicamento do ESP32
   Future<void> excluirMedicamento(int posicao) async {
     if (!_isConnected || _client == null) {
-      throw Exception('MQTT não conectado!');
+      print('❌ MQTT não conectado');
+      return;
     }
 
     try {
-      print('\n========================================');
-      print('🗑️ EXCLUINDO MEDICAMENTO NA POSIÇÃO $posicao');
-      print('========================================');
-
       final payload = json.encode({
         'acao': 'excluir',
         'posicao': posicao,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
+
+      print('📤 Excluindo medicamento posição $posicao via MQTT');
 
       final builder = MqttClientPayloadBuilder();
       builder.addString(payload);
@@ -242,54 +169,31 @@ class MqttService {
       );
 
       print('✅ Comando de exclusão enviado!');
-      print('========================================\n');
     } catch (e) {
       print('❌ Erro ao excluir medicamento: $e');
-      rethrow;
     }
   }
 
-  /// Converte horário HH:MM para milissegundos
-  /// Exemplo: "08:00" = 8 horas = 28.800.000 ms
+  // Converte horário HH:MM para milissegundos
   int _converterHorarioParaMs(String horario) {
     try {
       final partes = horario.split(':');
-      if (partes.length != 2) {
-        throw FormatException('Formato de horário inválido: $horario');
+      if (partes.length == 2) {
+        final horas = int.parse(partes[0]);
+        final minutos = int.parse(partes[1]);
+        return (horas * 60 + minutos) * 60 * 1000; // converte para ms
       }
-
-      final horas = int.parse(partes[0]);
-      final minutos = int.parse(partes[1]);
-
-      if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-        throw RangeError('Horário fora do intervalo válido: $horario');
-      }
-
-      final totalMinutos = (horas * 60) + minutos;
-      final milissegundos = totalMinutos * 60 * 1000;
-
-      print('🔄 Conversão: $horario → ${milissegundos}ms');
-
-      return milissegundos;
     } catch (e) {
-      print('❌ Erro ao converter horário "$horario": $e');
-      print('⚠️ Usando intervalo padrão de 8 horas');
-      return 8 * 60 * 60 * 1000; // 28800000 ms
+      print('Erro ao converter horário: $e');
     }
+    return 8 * 60 * 60 * 1000; // padrão 8 horas em ms
   }
 
-  /// Envia comando genérico para o ESP32
-  Future<void> enviarComando(
-    String comando, {
-    Map<String, dynamic>? dados,
-  }) async {
-    if (!_isConnected || _client == null) {
-      throw Exception('MQTT não conectado!');
-    }
+  Future<void> enviarComando(String comando,
+      {Map<String, dynamic>? dados}) async {
+    if (!_isConnected || _client == null) return;
 
     try {
-      print('\n📤 Enviando comando: $comando');
-
       final payload = json.encode({
         'comando': comando,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -300,108 +204,50 @@ class MqttService {
       builder.addString(payload);
 
       _client!.publishMessage(
-        '$topicMedicamentos/comando',
+        topicComando,
         MqttQos.atLeastOnce,
         builder.payload!,
       );
 
-      print('✅ Comando enviado!');
+      print('📤 Comando enviado: $comando');
     } catch (e) {
       print('❌ Erro ao enviar comando: $e');
-      rethrow;
     }
   }
 
-  /// Publica status do app
   void _publishStatus(String status) {
-    if (_client == null || !_isConnected) return;
+    if (_client == null) return;
 
-    try {
-      final builder = MqttClientPayloadBuilder();
-      builder.addString(json.encode({
-        'status': status,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'device': 'flutter_app',
-      }));
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(json.encode({
+      'status': status,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    }));
 
-      _client!.publishMessage(
-        topicStatusApp,
-        MqttQos.atLeastOnce,
-        builder.payload!,
-      );
-
-      print('📡 Status publicado: $status');
-    } catch (e) {
-      print('❌ Erro ao publicar status: $e');
-    }
+    _client!.publishMessage(
+      topicStatus,
+      MqttQos.atMostOnce,
+      builder.payload!,
+    );
   }
 
-  /// Limpa conexão anterior
-  Future<void> _cleanupConnection() async {
+  void disconnect() {
     if (_client != null) {
-      try {
-        _client!.disconnect();
-      } catch (e) {
-        print('⚠️ Erro ao limpar conexão anterior: $e');
-      }
-      _client = null;
-    }
-    _isConnected = false;
-  }
-
-  /// Desconecta do broker
-  Future<void> disconnect() async {
-    if (_client != null) {
-      print('\n🔌 Desconectando do broker MQTT...');
       _publishStatus('offline');
-
-      await Future.delayed(const Duration(milliseconds: 100));
-
       _client!.disconnect();
       _isConnected = false;
-
-      await _messageController?.close();
-      _messageController = null;
-
-      print('✅ Desconectado com sucesso!\n');
     }
   }
 
-  /// Stream de mensagens do ESP32
+  // Escuta mensagens do ESP32
   Stream<String> get messagesStream {
-    return _messageController?.stream ?? Stream.empty();
-  }
+    if (_client == null) return Stream.empty();
 
-  /// Testa a conexão MQTT
-  Future<bool> testarConexao() async {
-    if (!_isConnected || _client == null) {
-      print('❌ MQTT não está conectado');
-      return false;
-    }
-
-    try {
-      final builder = MqttClientPayloadBuilder();
-      builder.addString(json.encode({
-        'teste': true,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      }));
-
-      _client!.publishMessage(
-        '$topicStatusApp/ping',
-        MqttQos.atLeastOnce,
-        builder.payload!,
-      );
-
-      print('✅ Conexão MQTT ativa');
-      return true;
-    } catch (e) {
-      print('❌ Erro ao testar conexão: $e');
-      return false;
-    }
-  }
-
-  /// Libera recursos quando não mais necessário
-  void dispose() {
-    disconnect();
+    return _client!.updates!.map((List<MqttReceivedMessage<MqttMessage>> c) {
+      final MqttPublishMessage message = c[0].payload as MqttPublishMessage;
+      final payload =
+          MqttPublishPayload.bytesToStringAsString(message.payload.message);
+      return payload;
+    });
   }
 }

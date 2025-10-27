@@ -31,8 +31,7 @@ class CampoFormulario extends StatelessWidget {
             Container(
               width: 45,
               height: 45,
-              child:
-                  iconeWidget ??
+              child: iconeWidget ??
                   Icon(iconeFallback, size: 32, color: const Color(0xFF2C5282)),
             ),
             const SizedBox(width: 8),

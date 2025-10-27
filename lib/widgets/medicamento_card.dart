@@ -9,9 +9,6 @@ class MedicamentoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final proximaDose = medicamento.proximaDose;
-    final todasCompletas = medicamento.todasDosesCompletas;
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -27,7 +24,6 @@ class MedicamentoCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Ícone do medicamento
           Container(
             width: 50,
             height: 50,
@@ -39,55 +35,46 @@ class MedicamentoCard extends StatelessWidget {
                 return Icon(
                   Icons.medication,
                   size: 40,
-                  color: todasCompletas
-                      ? Colors.grey.shade600
-                      : Colors.blue.shade600,
+                  color: Colors.blue.shade600,
                 );
               },
             ),
           ),
           const SizedBox(width: 16),
-
-          // Nome do medicamento
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   medicamento.titulo,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: todasCompletas
-                        ? Colors.grey.shade700
-                        : const Color(0xFF2D3748),
+                    color: Color(0xFF2D3748),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
                 ),
                 const SizedBox(height: 4),
-
-                // Próxima dose ou mensagem de completo
                 Row(
                   children: [
-                    Icon(
+                    Text(
+                      medicamento.dose,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF4A5568),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Icon(
                       Icons.access_time,
                       size: 18,
-                      color: todasCompletas
-                          ? Colors.grey.shade600
-                          : const Color(0xFF718096),
+                      color: Color(0xFF718096),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Text(
-                      todasCompletas
-                          ? 'Doses completas hoje'
-                          : 'Próxima dose: $proximaDose',
-                      style: TextStyle(
+                      medicamento.horario,
+                      style: const TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: todasCompletas
-                            ? Colors.grey.shade600
-                            : const Color(0xFF4A5568),
+                        color: Color(0xFF718096),
                       ),
                     ),
                   ],
@@ -95,21 +82,6 @@ class MedicamentoCard extends StatelessWidget {
               ],
             ),
           ),
-
-          // Indicador visual de status
-          if (todasCompletas)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade600,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.check_circle,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
         ],
       ),
     );

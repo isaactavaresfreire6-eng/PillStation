@@ -38,29 +38,12 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
       final med = widget.medicamentoParaEditar!;
       nomeController.text = med.titulo;
       validadeController.text = med.validade;
-
-      // Converte "HH:mm" para "Xh Ym" se necessário
-      intervaloController.text = _converterParaIntervalo(med.horario);
+      intervaloController.text = med.horario;
       primeiraDoseController.text = med.dose;
     }
 
     validadeController.addListener(_validarValidade);
     nomeController.addListener(() => setState(() {}));
-  }
-
-  // Converte "08:00" para "8h 0m"
-  String _converterParaIntervalo(String horario) {
-    if (horario.contains('h')) return horario; // Já está no formato correto
-
-    try {
-      final partes = horario.split(':');
-      if (partes.length == 2) {
-        final horas = int.parse(partes[0]);
-        final minutos = int.parse(partes[1]);
-        return minutos > 0 ? '${horas}h ${minutos}m' : '${horas}h 0m';
-      }
-    } catch (_) {}
-    return horario;
   }
 
   void _validarValidade() {
@@ -178,7 +161,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
                           asset: "assets/doses.png",
                           icon: Icons.medical_information,
                           titulo: "Primeira dose",
-                          placeholder: "Primeiro horário (ex: 08:30)",
+                          placeholder: "Horário (ex: 08:30)",
                           controller: primeiraDoseController,
                           formatters: [
                             FilteringTextInputFormatter.digitsOnly,
@@ -187,7 +170,18 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        _buildCampoIntervalo(),
+                        _buildCampo(
+                          asset: "assets/intervalo.png",
+                          icon: Icons.access_time,
+                          titulo: "Intervalo de doses",
+                          placeholder: "Intervalo (ex: 08:00)",
+                          controller: intervaloController,
+                          formatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            HoraInputFormatter(),
+                            LengthLimitingTextInputFormatter(5),
+                          ],
+                        ),
                         const SizedBox(height: 24),
                         _buildBotaoSalvar(),
                         if (isEdicao) ...[
@@ -355,41 +349,6 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
     );
   }
 
-  // Campo especial para intervalo com formatação "Xh Ym"
-  Widget _buildCampoIntervalo() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTituloCampo(
-            "Intervalo de doses", "assets/intervalo.png", Icons.access_time),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey, width: 1),
-          ),
-          child: TextField(
-            controller: intervaloController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              IntervaloInputFormatter(), // Novo formatador!
-              LengthLimitingTextInputFormatter(9), // "XXh XXm"
-            ],
-            decoration: InputDecoration(
-              hintText: "Ex: 8h 0m (8 horas)",
-              hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-              border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildTituloCampo(String titulo, String asset, IconData iconFallback) {
     return Row(
       children: [
@@ -485,12 +444,8 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
         validadeController.text.length < 10) erros.add('Validade');
     if (primeiraDoseController.text.trim().isEmpty ||
         primeiraDoseController.text.length < 5) erros.add('Primeira dose');
-
-    // Validação do intervalo (precisa ter pelo menos "Xh")
     if (intervaloController.text.trim().isEmpty ||
-        !intervaloController.text.contains('h')) {
-      erros.add('Intervalo de doses');
-    }
+        intervaloController.text.length < 5) erros.add('Intervalo de doses');
 
     if (erros.isNotEmpty) {
       String mensagem = erros.length == 1
@@ -520,7 +475,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
     final medicamentoAtualizado = Medicamento(
       titulo: nomeController.text.trim(),
       dose: primeiraDoseController.text,
-      horario: intervaloController.text, // Já está no formato "Xh Ym"
+      horario: intervaloController.text,
       validade: validadeController.text,
       cor: corEscolhida,
     );
@@ -562,10 +517,6 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
     super.dispose();
   }
 }
-
-// ============================================================================
-// FORMATADORES
-// ============================================================================
 
 // Formatador para remover acentuação
 class RemoverAcentuacaoFormatter extends TextInputFormatter {
@@ -679,60 +630,5 @@ class HoraInputFormatter extends TextInputFormatter {
     if (text.length > 5) text = text.substring(0, 5);
     return TextEditingValue(
         text: text, selection: TextSelection.collapsed(offset: text.length));
-  }
-}
-
-// 🆕 Formatador para INTERVALO (formato "Xh Ym")
-class IntervaloInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    String text = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-
-    // Limita a 4 dígitos (máximo: 23h 59m)
-    if (text.length > 4) text = text.substring(0, 4);
-
-    String formatted = '';
-
-    if (text.isEmpty) {
-      return TextEditingValue(
-          text: '', selection: TextSelection.collapsed(offset: 0));
-    }
-
-    // Primeiro dígito (horas)
-    if (text.length >= 1) {
-      int primeiroDigito = int.parse(text[0]);
-      if (primeiroDigito > 2) return oldValue; // Não permite horas > 23
-
-      formatted = text[0];
-    }
-
-    // Segundo dígito (horas)
-    if (text.length >= 2) {
-      int horas = int.parse(text.substring(0, 2));
-      if (horas > 23) return oldValue; // Bloqueia se horas > 23
-
-      formatted = '${text.substring(0, 2)}h';
-    }
-
-    // Adiciona espaço antes dos minutos
-    if (text.length >= 3) {
-      formatted += ' ${text[2]}';
-    }
-
-    // Segundo dígito dos minutos
-    if (text.length >= 4) {
-      int primeiroDigitoMinuto = int.parse(text[2]);
-      if (primeiroDigitoMinuto > 5) return oldValue; // Minutos não passam de 59
-
-      int minutos = int.parse(text.substring(2, 4));
-      if (minutos > 59) return oldValue;
-
-      formatted = '${text.substring(0, 2)}h ${text.substring(2, 4)}m';
-    }
-
-    return TextEditingValue(
-        text: formatted,
-        selection: TextSelection.collapsed(offset: formatted.length));
   }
 }

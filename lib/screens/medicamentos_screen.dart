@@ -66,7 +66,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await prefs.setStringList('medicamentos', medicamentosJson);
 
-      // Envia para o ESP32 via MQTT com posições corretas
+      // Envia para o ESP32 via MQTT
       if (_mqttConnected) {
         await _mqttService.enviarMedicamentos(medicamentos);
       }
@@ -80,11 +80,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       _statusConnection = 'Conectando...';
     });
 
-    print('\n🔄 Iniciando conexão MQTT do aplicativo...');
-
-    // Conecta ao broker público HiveMQ
     final connected = await _mqttService.connect(
-      broker: 'broker.hivemq.com',
+      broker: '192.168.1.100', // Substitua pelo IP do seu broker
       port: 1883,
     );
 
@@ -93,20 +90,12 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       _statusConnection = connected ? 'Conectado' : 'Erro de conexão';
     });
 
-    if (connected) {
-      print('✅ App conectado ao MQTT com sucesso!');
-
-      if (medicamentos.isNotEmpty) {
-        print(
-            '📤 Reenviando ${medicamentos.length} medicamentos para o ESP32...');
-        await Future.delayed(
-            const Duration(seconds: 2)); // Aguarda ESP32 se inscrever
-        await _mqttService.enviarMedicamentos(medicamentos);
-      } else {
-        print('ℹ️ Nenhum medicamento para enviar');
+    if (connected && medicamentos.isNotEmpty) {
+      // Reenvia medicamentos existentes para o ESP32
+      for (int i = 0; i < medicamentos.length; i++) {
+        await _mqttService.enviarMedicamento(medicamentos[i]);
+        await Future.delayed(Duration(milliseconds: 500)); // Evita spam
       }
-    } else {
-      print('❌ Falha na conexão MQTT do app');
     }
   }
 
@@ -240,7 +229,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
           if (!_mqttConnected) ...[
             const SizedBox(height: 16),
             Text(
-              'Aguarde a conexão com o ESP32...',
+              'Verifique a conexão',
               style: TextStyle(fontSize: 14, color: Colors.orange.shade600),
             ),
           ],
@@ -271,11 +260,10 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await _saveMedicamentos();
 
-      // Envia medicamento individual para o ESP32 COM A POSIÇÃO
+      // Envia medicamento individual para o ESP32
       if (_mqttConnected) {
-        final posicao = medicamentos.length - 1;
-        await _mqttService.enviarMedicamento(novoMed, posicao: posicao);
-        _mostrarSnackBar('Medicamento adicionado e enviado (Posição $posicao)!',
+        await _mqttService.enviarMedicamento(novoMed);
+        _mostrarSnackBar('Medicamento adicionado e enviado para o Dispositivo!',
             Colors.green);
       } else {
         _mostrarSnackBar(
@@ -300,7 +288,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     if (resultado != null) {
       setState(() {
         if (resultado == 'excluir') {
-          // Remove medicamento do ESP32 usando o índice correto
+          // Remove medicamento do ESP32 usando o índice
           if (_mqttConnected) {
             _mqttService.excluirMedicamento(index);
           }
@@ -310,9 +298,9 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
         } else if (resultado is Medicamento) {
           medicamentos[index] = resultado;
 
-          // Envia medicamento atualizado COM A POSIÇÃO
+          // Envia medicamento atualizado
           if (_mqttConnected) {
-            _mqttService.enviarMedicamento(resultado, posicao: index);
+            _mqttService.enviarMedicamento(resultado);
           }
 
           _mostrarSnackBar('Medicamento atualizado!', Colors.blue);
@@ -355,7 +343,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       SnackBar(
         content: Text(mensagem),
         backgroundColor: cor,
-        duration: const Duration(seconds: 3),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
