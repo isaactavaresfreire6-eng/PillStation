@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/medicamento.dart';
 import '../widgets/medicamento_card.dart';
 import '../services/mqtt_service.dart';
+import '../services/notification_service.dart';
 import 'cadastro_medicamento_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -18,14 +19,28 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
   static const int LIMITE_MEDICAMENTOS = 4;
 
   final MqttService _mqttService = MqttService();
+  final NotificationService _notificationService = NotificationService();
+
   bool _mqttConnected = false;
   String _statusConnection = 'Desconectado';
 
   @override
   void initState() {
     super.initState();
-    _loadMedicamentos();
-    _connectMqtt();
+    _initializeServices();
+  }
+
+  /// Inicializa serviços de notificação e MQTT
+  Future<void> _initializeServices() async {
+    // Inicializa notificações
+    await _notificationService.initialize();
+    await _notificationService.requestPermissions();
+
+    // Carrega medicamentos
+    await _loadMedicamentos();
+
+    // Conecta MQTT
+    await _connectMqtt();
   }
 
   Future<void> _loadMedicamentos() async {
@@ -46,6 +61,11 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
           ));
         }
       });
+
+      // Reagenda notificações para todos os medicamentos carregados
+      for (int i = 0; i < medicamentos.length; i++) {
+        await _notificationService.agendarNotificacoes(medicamentos[i], i);
+      }
     } catch (e) {
       print('Erro ao carregar medicamentos: $e');
     }
@@ -260,15 +280,18 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await _saveMedicamentos();
 
+      // Agenda notificações para o novo medicamento
+      final indice = medicamentos.length - 1;
+      await _notificationService.agendarNotificacoes(novoMed, indice);
+
       // Envia medicamento individual para o ESP32
       if (_mqttConnected) {
         await _mqttService.enviarMedicamento(novoMed);
-        _mostrarSnackBar('Medicamento adicionado e enviado para o Dispositivo!',
-            Colors.green);
+        _mostrarSnackBar(
+            'Medicamento adicionado e notificações agendadas!', Colors.green);
       } else {
         _mostrarSnackBar(
-            'Medicamento adicionado (será sincronizado quando conectar)',
-            Colors.orange);
+            'Medicamento adicionado e notificações agendadas!', Colors.green);
       }
     }
   }
@@ -288,6 +311,9 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     if (resultado != null) {
       setState(() {
         if (resultado == 'excluir') {
+          // Cancela notificações do medicamento
+          _notificationService.cancelarNotificacoesMedicamento(index);
+
           // Remove medicamento do ESP32 usando o índice
           if (_mqttConnected) {
             _mqttService.excluirMedicamento(index);
@@ -295,8 +321,14 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
           medicamentos.removeAt(index);
           _mostrarSnackBar('Medicamento removido!', Colors.orange);
+
+          // Reagenda notificações para os medicamentos restantes
+          _reagendarTodasNotificacoes();
         } else if (resultado is Medicamento) {
           medicamentos[index] = resultado;
+
+          // Reagenda notificações do medicamento atualizado
+          _notificationService.agendarNotificacoes(resultado, index);
 
           // Envia medicamento atualizado
           if (_mqttConnected) {
@@ -307,6 +339,13 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
         }
       });
       await _saveMedicamentos();
+    }
+  }
+
+  /// Reagenda todas as notificações (útil após exclusão)
+  Future<void> _reagendarTodasNotificacoes() async {
+    for (int i = 0; i < medicamentos.length; i++) {
+      await _notificationService.agendarNotificacoes(medicamentos[i], i);
     }
   }
 
@@ -334,11 +373,6 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
   }
 
   void _mostrarSnackBar(String mensagem, Color cor) {
-    if (!_mqttConnected) {
-      mensagem += ' (Offline - será sincronizado quando conectar)';
-      cor = Colors.orange;
-    }
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(mensagem),
