@@ -1,43 +1,49 @@
 // services/mqtt_service.dart
 import 'dart:convert';
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
+import 'package:mqtt_client/mqtt_browser_client.dart'; // Para Web
 import '../models/medicamento.dart';
+
 
 class MqttService {
   static final MqttService _instance = MqttService._internal();
   factory MqttService() => _instance;
   MqttService._internal();
 
-  MqttServerClient? _client;
+
+  MqttClient? _client;
   bool _isConnected = false;
+
 
   // Topics MQTT
   static const String topicMedicamentos = 'pillstation/medicamentos';
   static const String topicStatus = 'pillstation/status';
   static const String topicComando = 'pillstation/comando';
 
+
   bool get isConnected => _isConnected;
 
+
   Future<bool> connect({
-    String broker = 'test.mosquitto.org', // Broker público para teste
-    int port = 1883,
+    String broker = 'broker.hivemq.com',
+    int port = 8000, // ✅ HiveMQ WebSocket com CORS liberado
     String clientId = 'flutter_pillstation',
   }) async {
     try {
-      _client = MqttServerClient(broker, clientId);
+      // Cria cliente MQTT para navegador (WebSocket)
+      _client = MqttBrowserClient('ws://$broker', clientId);
       _client!.port = port;
       _client!.keepAlivePeriod = 60;
       _client!.autoReconnect = true;
       _client!.onAutoReconnect = _onAutoReconnect;
       _client!.onConnected = _onConnected;
       _client!.onDisconnected = _onDisconnected;
-
-      // Configurações adicionais para conectividade
+      
       _client!.logging(on: true);
-      _client!.onBadCertificate = (dynamic certificate) => true;
 
-      print('🔄 Conectando ao broker MQTT: $broker:$port');
+
+      print('🔄 Conectando ao broker MQTT (WebSocket): ws://$broker:$port');
+
 
       final connMessage = MqttConnectMessage()
           .withClientIdentifier(
@@ -47,19 +53,25 @@ class MqttService {
           .startClean()
           .withWillQos(MqttQos.atMostOnce);
 
+
       _client!.connectionMessage = connMessage;
 
+
       await _client!.connect();
+
 
       if (_client!.connectionStatus!.state == MqttConnectionState.connected) {
         print('✅ Conectado ao broker MQTT!');
         _isConnected = true;
 
+
         // Publica status online
         _publishStatus('online');
 
+
         // Inscreve nos tópicos de resposta do ESP32
         _client!.subscribe('$topicStatus/esp32', MqttQos.atMostOnce);
+
 
         return true;
       }
@@ -67,29 +79,35 @@ class MqttService {
       print('❌ Erro ao conectar MQTT: $e');
     }
 
+
     _isConnected = false;
     return false;
   }
+
 
   void _onConnected() {
     print('✅ Cliente MQTT conectado');
     _isConnected = true;
   }
 
+
   void _onDisconnected() {
     print('❌ Cliente MQTT desconectado');
     _isConnected = false;
   }
 
+
   void _onAutoReconnect() {
     print('🔄 Reconectando automaticamente...');
   }
+
 
   Future<void> enviarMedicamentos(List<Medicamento> medicamentos) async {
     if (!_isConnected || _client == null) {
       print('❌ MQTT não conectado');
       return;
     }
+
 
     try {
       // Envia cada medicamento individualmente
@@ -104,15 +122,18 @@ class MqttService {
     }
   }
 
+
   Future<void> enviarMedicamento(Medicamento medicamento) async {
     if (!_isConnected || _client == null) {
       print('❌ MQTT não conectado');
       return;
     }
 
+
     try {
       // CORREÇÃO: Converte o intervalo (HH:MM) para milissegundos
       final intervaloDoses = _converterHorarioParaMs(medicamento.horario);
+
 
       final payload = json.encode({
         'nome': medicamento.titulo,
@@ -123,17 +144,21 @@ class MqttService {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
+
       print('📤 Enviando medicamento via MQTT:');
       print(payload);
 
+
       final builder = MqttClientPayloadBuilder();
       builder.addString(payload);
+
 
       _client!.publishMessage(
         topicMedicamentos,
         MqttQos.atLeastOnce,
         builder.payload!,
       );
+
 
       print('✅ Medicamento enviado com sucesso!');
       print('   Nome: ${medicamento.titulo}');
@@ -144,11 +169,13 @@ class MqttService {
     }
   }
 
+
   Future<void> excluirMedicamento(int posicao) async {
     if (!_isConnected || _client == null) {
       print('❌ MQTT não conectado');
       return;
     }
+
 
     try {
       final payload = json.encode({
@@ -157,10 +184,13 @@ class MqttService {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
+
       print('📤 Excluindo medicamento posição $posicao via MQTT');
+
 
       final builder = MqttClientPayloadBuilder();
       builder.addString(payload);
+
 
       _client!.publishMessage(
         topicMedicamentos,
@@ -168,11 +198,13 @@ class MqttService {
         builder.payload!,
       );
 
+
       print('✅ Comando de exclusão enviado!');
     } catch (e) {
       print('❌ Erro ao excluir medicamento: $e');
     }
   }
+
 
   // Converte horário HH:MM para milissegundos
   int _converterHorarioParaMs(String horario) {
@@ -189,9 +221,11 @@ class MqttService {
     return 8 * 60 * 60 * 1000; // padrão 8 horas em ms
   }
 
+
   Future<void> enviarComando(String comando,
       {Map<String, dynamic>? dados}) async {
     if (!_isConnected || _client == null) return;
+
 
     try {
       final payload = json.encode({
@@ -200,8 +234,10 @@ class MqttService {
         'dados': dados ?? {},
       });
 
+
       final builder = MqttClientPayloadBuilder();
       builder.addString(payload);
+
 
       _client!.publishMessage(
         topicComando,
@@ -209,14 +245,17 @@ class MqttService {
         builder.payload!,
       );
 
+
       print('📤 Comando enviado: $comando');
     } catch (e) {
       print('❌ Erro ao enviar comando: $e');
     }
   }
 
+
   void _publishStatus(String status) {
     if (_client == null) return;
+
 
     final builder = MqttClientPayloadBuilder();
     builder.addString(json.encode({
@@ -224,12 +263,14 @@ class MqttService {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     }));
 
+
     _client!.publishMessage(
       topicStatus,
       MqttQos.atMostOnce,
       builder.payload!,
     );
   }
+
 
   void disconnect() {
     if (_client != null) {
@@ -239,9 +280,11 @@ class MqttService {
     }
   }
 
+
   // Escuta mensagens do ESP32
   Stream<String> get messagesStream {
     if (_client == null) return Stream.empty();
+
 
     return _client!.updates!.map((List<MqttReceivedMessage<MqttMessage>> c) {
       final MqttPublishMessage message = c[0].payload as MqttPublishMessage;
@@ -251,3 +294,6 @@ class MqttService {
     });
   }
 }
+
+
+
