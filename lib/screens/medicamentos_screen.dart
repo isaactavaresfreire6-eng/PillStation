@@ -39,7 +39,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     // Carrega medicamentos
     await _loadMedicamentos();
 
-    // Conecta MQTT
+    // Conecta ao MQTT
     await _connectMqtt();
   }
 
@@ -63,11 +63,11 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       });
 
       // Reagenda notificações para todos os medicamentos carregados
-      for (int i = 0; i < medicamentos.length; i++) {
-        await _notificationService.agendarNotificacoes(medicamentos[i], i);
-      }
+      await _reagendarTodasNotificacoes();
+
+      print('💾 ${medicamentos.length} medicamentos carregados');
     } catch (e) {
-      print('Erro ao carregar medicamentos: $e');
+      print('❌ Erro ao carregar medicamentos: $e');
     }
   }
 
@@ -86,13 +86,24 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await prefs.setStringList('medicamentos', medicamentosJson);
 
-      // Envia para o ESP32 via MQTT
+      // Envia JSON completo para o ESP32
       if (_mqttConnected) {
         await _mqttService.enviarMedicamentos(medicamentos);
       }
+
+      print('💾 Medicamentos salvos com sucesso');
     } catch (e) {
-      print('Erro ao salvar medicamentos: $e');
+      print('❌ Erro ao salvar medicamentos: $e');
     }
+  }
+
+  /// Reagenda todas as notificações (usado após exclusão)
+  Future<void> _reagendarTodasNotificacoes() async {
+    print('🔄 Reagendando todas as notificações...');
+    for (int i = 0; i < medicamentos.length; i++) {
+      await _notificationService.agendarNotificacoes(medicamentos[i], i);
+    }
+    print('✅ Notificações reagendadas!');
   }
 
   Future<void> _connectMqtt() async {
@@ -100,8 +111,9 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       _statusConnection = 'Conectando...';
     });
 
+    // IMPORTANTE: Substitua pelo IP do seu broker MQTT
     final connected = await _mqttService.connect(
-      broker: '192.168.1.100', // Substitua pelo IP do seu broker
+      broker: '192.168.1.100', // ← COLOQUE O IP DO SEU BROKER AQUI
       port: 1883,
     );
 
@@ -111,11 +123,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     });
 
     if (connected && medicamentos.isNotEmpty) {
-      // Reenvia medicamentos existentes para o ESP32
-      for (int i = 0; i < medicamentos.length; i++) {
-        await _mqttService.enviarMedicamento(medicamentos[i]);
-        await Future.delayed(Duration(milliseconds: 500)); // Evita spam
-      }
+      // Envia todos os medicamentos em um único JSON
+      await _mqttService.enviarMedicamentos(medicamentos);
     }
   }
 
@@ -178,6 +187,37 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
                         ),
                       ],
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Botão de teste de notificação
+                  GestureDetector(
+                    onTap: _testarNotificacao,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.notification_add,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Testar Notificação',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -246,13 +286,6 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
             style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
             textAlign: TextAlign.center,
           ),
-          if (!_mqttConnected) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Verifique a conexão',
-              style: TextStyle(fontSize: 14, color: Colors.orange.shade600),
-            ),
-          ],
         ],
       ),
     );
@@ -284,14 +317,18 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       final indice = medicamentos.length - 1;
       await _notificationService.agendarNotificacoes(novoMed, indice);
 
-      // Envia medicamento individual para o ESP32
+      // Envia medicamento para ESP32
       if (_mqttConnected) {
         await _mqttService.enviarMedicamento(novoMed);
         _mostrarSnackBar(
-            'Medicamento adicionado e notificações agendadas!', Colors.green);
+          'Medicamento adicionado e enviado ao ESP32! ✅',
+          Colors.green,
+        );
       } else {
         _mostrarSnackBar(
-            'Medicamento adicionado e notificações agendadas!', Colors.green);
+          'Medicamento adicionado! (Offline - conecte ao ESP32)',
+          Colors.orange,
+        );
       }
     }
   }
@@ -314,39 +351,43 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
           // Cancela notificações do medicamento
           _notificationService.cancelarNotificacoesMedicamento(index);
 
-          // Remove medicamento do ESP32 usando o índice
+          // Notifica ESP32 sobre exclusão
           if (_mqttConnected) {
             _mqttService.excluirMedicamento(index);
           }
 
           medicamentos.removeAt(index);
-          _mostrarSnackBar('Medicamento removido!', Colors.orange);
-
-          // Reagenda notificações para os medicamentos restantes
-          _reagendarTodasNotificacoes();
+          _mostrarSnackBar('Medicamento removido! ✅', Colors.orange);
         } else if (resultado is Medicamento) {
           medicamentos[index] = resultado;
 
           // Reagenda notificações do medicamento atualizado
           _notificationService.agendarNotificacoes(resultado, index);
 
-          // Envia medicamento atualizado
+          // Atualiza no ESP32
           if (_mqttConnected) {
             _mqttService.enviarMedicamento(resultado);
           }
 
-          _mostrarSnackBar('Medicamento atualizado!', Colors.blue);
+          _mostrarSnackBar('Medicamento atualizado! ✅', Colors.blue);
         }
       });
+
       await _saveMedicamentos();
+
+      // Reagenda TODAS as notificações após qualquer mudança
+      // (necessário porque os índices podem ter mudado após exclusão)
+      await _reagendarTodasNotificacoes();
     }
   }
 
-  /// Reagenda todas as notificações (útil após exclusão)
-  Future<void> _reagendarTodasNotificacoes() async {
-    for (int i = 0; i < medicamentos.length; i++) {
-      await _notificationService.agendarNotificacoes(medicamentos[i], i);
-    }
+  /// Testa notificação imediata
+  Future<void> _testarNotificacao() async {
+    await _notificationService.testarNotificacaoImediata(
+      'Teste de Notificação 💊',
+      'Se você está vendo isso, as notificações estão funcionando!',
+    );
+    _mostrarSnackBar('Notificação de teste enviada! ✅', Colors.blue);
   }
 
   void _mostrarAlertaLimite() {
