@@ -97,13 +97,19 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     }
   }
 
-  /// Reagenda todas as notificações (usado após exclusão)
+  /// Reagenda todas as notificações do zero
   Future<void> _reagendarTodasNotificacoes() async {
-    print('🔄 Reagendando todas as notificações...');
+    print('🔄 Reagendando todas as notificações do zero...');
+
+    // Cancela TODAS as notificações primeiro
+    await _notificationService.cancelarTodasNotificacoes();
+
+    // Agenda novamente para cada medicamento
     for (int i = 0; i < medicamentos.length; i++) {
       await _notificationService.agendarNotificacoes(medicamentos[i], i);
     }
-    print('✅ Notificações reagendadas!');
+
+    print('✅ Todas as notificações foram reagendadas!');
   }
 
   Future<void> _connectMqtt() async {
@@ -187,37 +193,6 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
                         ),
                       ],
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Botão de teste de notificação
-                  GestureDetector(
-                    onTap: _testarNotificacao,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.notification_add,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'Testar Notificação',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                 ],
               ),
@@ -313,7 +288,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await _saveMedicamentos();
 
-      // Agenda notificações para o novo medicamento
+      // Agenda notificações para o novo medicamento (do zero)
       final indice = medicamentos.length - 1;
       await _notificationService.agendarNotificacoes(novoMed, indice);
 
@@ -334,13 +309,15 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
   }
 
   Future<void> _navegarParaEdicao(int index) async {
+    final medicamentoOriginal = medicamentos[index];
+
     final resultado = await Navigator.push<dynamic>(
       context,
       MaterialPageRoute(
         builder: (context) => CadastroMedicamentoScreen(
-          medicamentoParaEditar: medicamentos[index],
+          medicamentoParaEditar: medicamentoOriginal,
           indiceEdicao: index,
-          corPredefinida: medicamentos[index].cor,
+          corPredefinida: medicamentoOriginal.cor,
         ),
       ),
     );
@@ -348,46 +325,54 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     if (resultado != null) {
       setState(() {
         if (resultado == 'excluir') {
-          // Cancela notificações do medicamento
-          _notificationService.cancelarNotificacoesMedicamento(index);
-
-          // Notifica ESP32 sobre exclusão
-          if (_mqttConnected) {
-            _mqttService.excluirMedicamento(index);
-          }
-
+          // Remove o medicamento
           medicamentos.removeAt(index);
           _mostrarSnackBar('Medicamento removido! ✅', Colors.orange);
-        } else if (resultado is Medicamento) {
-          medicamentos[index] = resultado;
+        } else if (resultado is Map<String, dynamic>) {
+          // Recebe medicamento + flag de mudança da primeira dose
+          final medicamentoAtualizado = resultado['medicamento'] as Medicamento;
+          final primeiraDoseMudou = resultado['primeiraDoseMudou'] as bool;
 
-          // Reagenda notificações do medicamento atualizado
-          _notificationService.agendarNotificacoes(resultado, index);
+          // Se a primeira dose NÃO mudou, atualiza para o horário atual
+          Medicamento medicamentoFinal;
+          if (!primeiraDoseMudou) {
+            final agora = DateTime.now();
+            final horaAtual =
+                '${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}';
 
-          // Atualiza no ESP32
-          if (_mqttConnected) {
-            _mqttService.enviarMedicamento(resultado);
+            medicamentoFinal = Medicamento(
+              titulo: medicamentoAtualizado.titulo,
+              dose: horaAtual, // ✅ USA HORÁRIO ATUAL
+              horario: medicamentoAtualizado.horario,
+              validade: medicamentoAtualizado.validade,
+              cor: medicamentoAtualizado.cor,
+            );
+
+            print('🕐 Primeira dose atualizada para horário atual: $horaAtual');
+          } else {
+            // Usa o horário que o usuário definiu
+            medicamentoFinal = medicamentoAtualizado;
+            print(
+                '🕐 Primeira dose mantida como configurada: ${medicamentoAtualizado.dose}');
           }
 
-          _mostrarSnackBar('Medicamento atualizado! ✅', Colors.blue);
+          medicamentos[index] = medicamentoFinal;
+          _mostrarSnackBar(
+              'Medicamento atualizado! As doses foram reiniciadas 🔄',
+              Colors.blue);
         }
       });
 
       await _saveMedicamentos();
 
-      // Reagenda TODAS as notificações após qualquer mudança
-      // (necessário porque os índices podem ter mudado após exclusão)
+      // CRÍTICO: Reagenda TODAS as notificações do zero
       await _reagendarTodasNotificacoes();
-    }
-  }
 
-  /// Testa notificação imediata
-  Future<void> _testarNotificacao() async {
-    await _notificationService.testarNotificacaoImediata(
-      'Teste de Notificação 💊',
-      'Se você está vendo isso, as notificações estão funcionando!',
-    );
-    _mostrarSnackBar('Notificação de teste enviada! ✅', Colors.blue);
+      // Envia lista atualizada para o ESP32
+      if (_mqttConnected) {
+        await _mqttService.enviarMedicamentos(medicamentos);
+      }
+    }
   }
 
   void _mostrarAlertaLimite() {
@@ -418,7 +403,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
       SnackBar(
         content: Text(mensagem),
         backgroundColor: cor,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
       ),
     );
   }

@@ -32,6 +32,10 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
   bool _validadeVencida = false;
   String? _mensagemErroValidade;
 
+  // Controle de mudança do horário da primeira dose
+  String? _primeiraDoseOriginal;
+  bool _primeiraDoseFoiAlterada = false;
+
   // Constantes e getters utilitários
   static const int _maxCaracteresNome = 16;
   static const int _maxCaracteresData = 10;
@@ -55,6 +59,9 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
       _validadeController.text = med.validade;
       _intervaloController.text = med.horario;
       _primeiraDoseController.text = med.dose;
+
+      // Armazena o valor original da primeira dose
+      _primeiraDoseOriginal = med.dose;
     }
   }
 
@@ -62,6 +69,16 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
   void _configurarListeners() {
     _validadeController.addListener(_validarValidade);
     _nomeController.addListener(() => setState(() {}));
+
+    // Listener para detectar mudanças na primeira dose
+    _primeiraDoseController.addListener(() {
+      if (_isEdicao) {
+        setState(() {
+          _primeiraDoseFoiAlterada =
+              _primeiraDoseController.text != _primeiraDoseOriginal;
+        });
+      }
+    });
   }
 
   /// Valida a data de validade em tempo real
@@ -243,6 +260,11 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
             placeholder: "Horário (ex: 08:30)",
             controller: _primeiraDoseController,
           ),
+          // Indicador de comportamento ao atualizar
+          if (_isEdicao) ...[
+            const SizedBox(height: 8),
+            _buildAvisoAtualizacao(),
+          ],
           const SizedBox(height: 16),
           _buildCampoHorario(
             asset: "assets/intervalo.png",
@@ -257,6 +279,50 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
             const SizedBox(height: 12),
             _buildBotaoExcluir(),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Aviso sobre o comportamento da primeira dose ao atualizar
+  Widget _buildAvisoAtualizacao() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _primeiraDoseFoiAlterada
+            ? Colors.blue.shade50
+            : Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _primeiraDoseFoiAlterada
+              ? Colors.blue.shade200
+              : Colors.orange.shade200,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _primeiraDoseFoiAlterada ? Icons.info_outline : Icons.schedule,
+            size: 20,
+            color: _primeiraDoseFoiAlterada
+                ? Colors.blue.shade700
+                : Colors.orange.shade700,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _primeiraDoseFoiAlterada
+                  ? 'Nova primeira dose será no horário definido'
+                  : 'Primeira dose será no horário atual da atualização',
+              style: TextStyle(
+                fontSize: 12,
+                color: _primeiraDoseFoiAlterada
+                    ? Colors.blue.shade700
+                    : Colors.orange.shade700,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -511,8 +577,17 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
     }
 
     // Cria medicamento e retorna
-    final medicamento = _criarMedicamento();
-    Navigator.pop(context, medicamento);
+    if (_isEdicao) {
+      // Retorna Map com medicamento e flag de mudança da primeira dose
+      final resultado = {
+        'medicamento': _criarMedicamento(),
+        'primeiraDoseMudou': _primeiraDoseFoiAlterada,
+      };
+      Navigator.pop(context, resultado);
+    } else {
+      // Para novo cadastro, retorna apenas o medicamento
+      Navigator.pop(context, _criarMedicamento());
+    }
   }
 
   /// Valida se todos os campos obrigatórios estão preenchidos
@@ -603,6 +678,7 @@ class _CadastroMedicamentoScreenState extends State<CadastroMedicamentoScreen> {
     // Remove listeners antes de descartar
     _validadeController.removeListener(_validarValidade);
     _nomeController.removeListener(() {});
+    _primeiraDoseController.removeListener(() {});
 
     // Descarta controladores
     _nomeController.dispose();
