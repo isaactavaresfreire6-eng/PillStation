@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/medicamento.dart';
+import '../services/notification_service.dart';
 import 'dart:async';
 
 class MedicamentoCard extends StatefulWidget {
   final Medicamento medicamento;
+  final int indice;
 
-  const MedicamentoCard({Key? key, required this.medicamento})
-      : super(key: key);
+  const MedicamentoCard({
+    Key? key,
+    required this.medicamento,
+    required this.indice, required onDoseTomada,
+  }) : super(key: key);
 
   @override
   State<MedicamentoCard> createState() => _MedicamentoCardState();
@@ -15,15 +20,21 @@ class MedicamentoCard extends StatefulWidget {
 class _MedicamentoCardState extends State<MedicamentoCard> {
   static const int LIMITE_DOSES = 6;
   Timer? _timer;
+  int _dosesTomadasAnterior = -1;
+  final NotificationService _notificationService = NotificationService();
 
   @override
   void initState() {
     super.initState();
-    // Atualiza o card a cada 30 segundos para ficar mais responsivo
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // Verifica a cada 5 segundos se é hora de uma nova dose
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted) {
-        setState(() {});
+        _verificarENotificarDose();
       }
+    });
+    // Verifica imediatamente ao iniciar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verificarENotificarDose();
     });
   }
 
@@ -33,7 +44,35 @@ class _MedicamentoCardState extends State<MedicamentoCard> {
     super.dispose();
   }
 
-  /// Calcula a próxima dose e quantas doses já foram tomadas
+  /// Verifica se é hora de incrementar a dose e ENVIA NOTIFICAÇÃO
+  void _verificarENotificarDose() {
+    final dados = _calcularDadosDose();
+    final dosesTomadas = dados['dosesTomadas'] ?? 0;
+
+    // Se mudou o número de doses, ENVIA NOTIFICAÇÃO
+    if (_dosesTomadasAnterior != -1 &&
+        dosesTomadas > _dosesTomadasAnterior &&
+        dosesTomadas <= LIMITE_DOSES) {
+      
+      print('🔔 DOSE $dosesTomadas/$LIMITE_DOSES CAIU AGORA!');
+      
+      // Envia notificação instantânea
+      _notificationService.enviarNotificacaoImediata(
+        widget.medicamento.titulo,
+        dosesTomadas,
+        LIMITE_DOSES,
+      );
+    }
+
+    _dosesTomadasAnterior = dosesTomadas;
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Calcula a próxima dose e quantas doses JÁ FORAM TOMADAS
+  /// LÓGICA: 0/6 = nenhuma caiu ainda, 1/6 = primeira já caiu, ..., 6/6 = todas caíram
   Map<String, dynamic> _calcularDadosDose() {
     try {
       // Parse da primeira dose (formato: HH:MM)
@@ -54,6 +93,13 @@ class _MedicamentoCardState extends State<MedicamentoCard> {
       final horasIntervalo = int.parse(partesIntervalo[0]);
       final minutosIntervalo = int.parse(partesIntervalo[1]);
 
+      // Calcula o intervalo em minutos
+      final intervaloEmMinutos = (horasIntervalo * 60) + minutosIntervalo;
+
+      if (intervaloEmMinutos == 0) {
+        return {'proximaDose': widget.medicamento.dose, 'dosesTomadas': 0};
+      }
+
       // Obtém hora atual
       final agora = DateTime.now();
 
@@ -66,29 +112,29 @@ class _MedicamentoCardState extends State<MedicamentoCard> {
         minutoInicial,
       );
 
-      // Se a primeira dose ainda não chegou hoje
+      // Se a primeira dose ainda não chegou hoje → 0/6
       if (primeiraDose.isAfter(agora)) {
-        return {'proximaDose': widget.medicamento.dose, 'dosesTomadas': 0};
-      }
-
-      // Calcula o intervalo em minutos
-      final intervaloEmMinutos = (horasIntervalo * 60) + minutosIntervalo;
-
-      if (intervaloEmMinutos == 0) {
-        return {'proximaDose': widget.medicamento.dose, 'dosesTomadas': 0};
+        final hora = primeiraDose.hour.toString().padLeft(2, '0');
+        final minuto = primeiraDose.minute.toString().padLeft(2, '0');
+        return {
+          'proximaDose': '$hora:$minuto',
+          'dosesTomadas': 0,
+        };
       }
 
       // Calcula quantos minutos se passaram desde a primeira dose
       final minutosPassados = agora.difference(primeiraDose).inMinutes;
 
-      // Calcula quantas doses completas já passaram (não incluindo a atual)
-      final dosesCompletas = (minutosPassados / intervaloEmMinutos).floor();
+      // Calcula quantas doses JÁ CAÍRAM (passaram do horário)
+      // minutosPassados = 0 a 239 → 0 doses caíram (ainda estamos na janela da primeira)
+      // minutosPassados = 240+ → 1 dose caiu
+      final dosesTomadas = (minutosPassados / intervaloEmMinutos).floor();
 
-      // Número da dose atual (1 = primeira dose, 2 = segunda dose, etc)
-      final doseAtual = dosesCompletas + 1;
+      // Limita a 6 doses
+      final dosesTomadasLimitado = dosesTomadas > LIMITE_DOSES ? LIMITE_DOSES : dosesTomadas;
 
-      // Se já atingiu ou passou do limite
-      if (doseAtual > LIMITE_DOSES) {
+      // Se já atingiu o limite de 6 doses → Precisa repor
+      if (dosesTomadasLimitado >= LIMITE_DOSES) {
         return {
           'proximaDose': '--:--',
           'dosesTomadas': LIMITE_DOSES,
@@ -96,9 +142,9 @@ class _MedicamentoCardState extends State<MedicamentoCard> {
         };
       }
 
-      // Calcula o horário da próxima dose
+      // Calcula o horário da PRÓXIMA dose (que ainda não caiu)
       final proximaDoseDateTime = primeiraDose.add(
-        Duration(minutes: doseAtual * intervaloEmMinutos),
+        Duration(minutes: (dosesTomadasLimitado + 1) * intervaloEmMinutos),
       );
 
       // Formata para HH:MM
@@ -107,11 +153,11 @@ class _MedicamentoCardState extends State<MedicamentoCard> {
 
       return {
         'proximaDose': '$hora:$minuto',
-        'dosesTomadas': doseAtual,
-        'precisaRepor': false
+        'dosesTomadas': dosesTomadasLimitado,
+        'precisaRepor': false,
       };
     } catch (e) {
-      print('Erro ao calcular dose: $e');
+      print('❌ Erro ao calcular dose: $e');
       return {'proximaDose': widget.medicamento.dose, 'dosesTomadas': 0};
     }
   }

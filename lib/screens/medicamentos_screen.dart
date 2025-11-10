@@ -23,6 +23,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
   bool _mqttConnected = false;
   String _statusConnection = 'Desconectado';
+  
+  get _onDoseTomada => null;
 
   @override
   void initState() {
@@ -111,6 +113,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
     print('✅ Todas as notificações foram reagendadas!');
   }
+
+
 
   Future<void> _connectMqtt() async {
     setState(() {
@@ -216,6 +220,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
                               padding: const EdgeInsets.only(bottom: 12),
                               child: MedicamentoCard(
                                 medicamento: medicamentos[index],
+                                indice: index, // ✅ PASSA O ÍNDICE
+                                onDoseTomada: _onDoseTomada, // ✅ PASSA O CALLBACK
                               ),
                             ),
                           );

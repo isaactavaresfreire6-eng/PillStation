@@ -4,6 +4,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import '../models/medicamento.dart';
 
 /// Serviço responsável por gerenciar notificações de medicamentos
+/// LÓGICA SIMPLIFICADA: Sem SharedPreferences, tudo baseado em cálculo de tempo
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -91,7 +92,7 @@ class NotificationService {
   }
 
   /// Agenda notificações para um medicamento
-  /// Agenda as próximas 7 doses com validação robusta
+  /// LÓGICA CORRIGIDA: Agenda sempre 6 doses a partir da primeira dose configurada
   Future<void> agendarNotificacoes(Medicamento medicamento, int indice) async {
     if (!_initialized) await initialize();
 
@@ -99,7 +100,9 @@ class NotificationService {
     await cancelarNotificacoesMedicamento(indice);
 
     try {
-      print('\n🔔 Agendando notificações para: ${medicamento.titulo}');
+      print('\n🔔 ========================================');
+      print('🔔 AGENDANDO NOTIFICAÇÕES: ${medicamento.titulo}');
+      print('🔔 ========================================');
 
       // Parse da primeira dose
       final partesHorario = medicamento.dose.split(':');
@@ -152,7 +155,7 @@ class NotificationService {
       }
 
       print(
-          '⏰ Primeira dose: ${horaInicial.toString().padLeft(2, '0')}:${minutoInicial.toString().padLeft(2, '0')}');
+          '⏰ Primeira dose configurada: ${horaInicial.toString().padLeft(2, '0')}:${minutoInicial.toString().padLeft(2, '0')}');
       print(
           '⏱️ Intervalo: ${horasIntervalo}h ${minutosIntervalo}m ($intervaloEmMinutos minutos)');
 
@@ -162,7 +165,7 @@ class NotificationService {
           '🕐 Hora atual: ${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}');
 
       // Cria data/hora da primeira dose de HOJE
-      var proximaDose = tz.TZDateTime(
+      var primeiraDose = tz.TZDateTime(
         tz.local,
         agora.year,
         agora.month,
@@ -171,33 +174,51 @@ class NotificationService {
         minutoInicial,
       );
 
-      // Se a primeira dose já passou hoje, calcula a próxima dose válida
-      if (proximaDose.isBefore(agora) ||
-          proximaDose.difference(agora).inMinutes < 1) {
-        final diferencaMinutos = agora.difference(proximaDose).inMinutes.abs();
-        final dosesPassadas = (diferencaMinutos / intervaloEmMinutos).ceil();
-        proximaDose = proximaDose.add(
-          Duration(minutes: dosesPassadas * intervaloEmMinutos),
+      // Se a primeira dose já passou hoje, ajusta para a próxima dose futura
+      if (primeiraDose.isBefore(agora) ||
+          primeiraDose.difference(agora).inMinutes < 1) {
+        final minutosPassados = agora.difference(primeiraDose).inMinutes;
+
+        // Calcula quantas doses já passaram
+        final dosesPassadas = (minutosPassados / intervaloEmMinutos).floor();
+
+        // Avança para a próxima dose que ainda não passou
+        primeiraDose = primeiraDose.add(
+          Duration(minutes: (dosesPassadas + 1) * intervaloEmMinutos),
         );
+
         print(
-            '⏩ Primeira dose já passou. Próxima dose: ${proximaDose.hour.toString().padLeft(2, '0')}:${proximaDose.minute.toString().padLeft(2, '0')}');
+            '⏩ Primeira dose já passou. Próxima dose futura: ${primeiraDose.hour.toString().padLeft(2, '0')}:${primeiraDose.minute.toString().padLeft(2, '0')}');
+      } else {
+        print('✅ Primeira dose ainda não chegou hoje');
       }
 
-      // Agenda 7 notificações (1 semana aproximadamente se for intervalo de 24h)
+      // Agenda exatamente 6 notificações (Dose 1/6 até 6/6)
       int notificacoesAgendadas = 0;
-      const int totalNotificacoes = 7;
+      const int TOTAL_DOSES = 6;
 
-      for (int i = 0; i < totalNotificacoes; i++) {
+      print('\n📋 AGENDANDO 6 DOSES:');
+      print('─────────────────────────────────────────');
+
+      for (int i = 0; i < TOTAL_DOSES; i++) {
+        // Calcula o horário desta dose
+        final horarioDose = primeiraDose.add(
+          Duration(minutes: i * intervaloEmMinutos),
+        );
+
         final notificationId = (indice * 100) + i;
 
         // Só agenda se for no futuro (pelo menos 1 minuto)
-        if (proximaDose.isAfter(agora) &&
-            proximaDose.difference(agora).inMinutes >= 1) {
+        if (horarioDose.isAfter(agora) &&
+            horarioDose.difference(agora).inMinutes >= 1) {
+          // Número da dose para notificação (1/6, 2/6, ..., 6/6)
+          final doseNumero = i + 1;
+
           await _notifications.zonedSchedule(
             notificationId,
-            'Hora do medicamento! 💊',
+            '💊 Hora do medicamento! (Dose $doseNumero/$TOTAL_DOSES)',
             '${medicamento.titulo} - Tome sua dose agora',
-            proximaDose,
+            horarioDose,
             _notificationDetails(),
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
             uiLocalNotificationDateInterpretation:
@@ -205,23 +226,24 @@ class NotificationService {
           );
 
           final dataFormatada =
-              '${proximaDose.day.toString().padLeft(2, '0')}/${proximaDose.month.toString().padLeft(2, '0')}';
+              '${horarioDose.day.toString().padLeft(2, '0')}/${horarioDose.month.toString().padLeft(2, '0')}';
           final horaFormatada =
-              '${proximaDose.hour.toString().padLeft(2, '0')}:${proximaDose.minute.toString().padLeft(2, '0')}';
+              '${horarioDose.hour.toString().padLeft(2, '0')}:${horarioDose.minute.toString().padLeft(2, '0')}';
 
           print(
-              '  ✅ Dose ${i + 1}: $dataFormatada às $horaFormatada (ID: $notificationId)');
+              '  ✅ Dose $doseNumero/6: $dataFormatada às $horaFormatada (ID: $notificationId)');
           notificacoesAgendadas++;
         } else {
-          print('  ⏭️ Dose ${i + 1}: Pulada (muito próxima ou no passado)');
+          final horaFormatada =
+              '${horarioDose.hour.toString().padLeft(2, '0')}:${horarioDose.minute.toString().padLeft(2, '0')}';
+          print('  ⏭️ Dose ${i + 1}/6: $horaFormatada (Pulada - no passado)');
         }
-
-        // Próxima dose
-        proximaDose = proximaDose.add(Duration(minutes: intervaloEmMinutos));
       }
 
+      print('─────────────────────────────────────────');
       print(
-          '✅ Total agendadas: $notificacoesAgendadas/$totalNotificacoes notificações para ${medicamento.titulo}\n');
+          '✅ Total agendadas: $notificacoesAgendadas/$TOTAL_DOSES notificações');
+      print('🔔 ========================================\n');
 
       // Lista notificações pendentes para debug
       await listarNotificacoesPendentes();
@@ -234,7 +256,6 @@ class NotificationService {
   /// Cancela todas as notificações de um medicamento específico
   Future<void> cancelarNotificacoesMedicamento(int indice) async {
     for (int i = 0; i < 10; i++) {
-      // Cancela até 10 notificações por segurança
       final notificationId = (indice * 100) + i;
       await _notifications.cancel(notificationId);
     }
@@ -275,21 +296,26 @@ class NotificationService {
   /// Callback quando usuário toca na notificação
   void _onNotificationTap(NotificationResponse response) {
     print('👆 Notificação tocada: ${response.payload}');
-    // Aqui você pode adicionar navegação para tela específica
   }
 
   /// Lista todas as notificações pendentes (para debug)
   Future<void> listarNotificacoesPendentes() async {
     final pendentes = await _notifications.pendingNotificationRequests();
-    print('📋 Notificações pendentes: ${pendentes.length}');
+    print('📋 ═══════════════════════════════════════');
+    print('📋 NOTIFICAÇÕES PENDENTES: ${pendentes.length}');
+    print('📋 ═══════════════════════════════════════');
+
     if (pendentes.isEmpty) {
       print('  ⚠️ Nenhuma notificação agendada!');
     } else {
       for (var notif in pendentes) {
-        print(
-            '  📌 ID: ${notif.id}, Título: ${notif.title}, Corpo: ${notif.body}');
+        print('  📌 ID: ${notif.id}');
+        print('     Título: ${notif.title}');
+        print('     Corpo: ${notif.body}');
+        print('     ───────────────────────────────────');
       }
     }
+    print('📋 ═══════════════════════════════════════\n');
   }
 
   /// Testa notificação imediata (para debug)
@@ -307,4 +333,6 @@ class NotificationService {
 
     print('✅ Notificação de teste enviada!');
   }
+
+  void enviarNotificacaoImediata(String titulo, dosesTomadas, int limite_doses) {}
 }
