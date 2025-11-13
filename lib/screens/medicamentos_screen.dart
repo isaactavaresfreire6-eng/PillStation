@@ -23,7 +23,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
   bool _mqttConnected = false;
   String _statusConnection = 'Desconectado';
-  
+
   get _onDoseTomada => null;
 
   @override
@@ -73,6 +73,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     }
   }
 
+  /// ✅ MÉTODO ÚNICO _saveMedicamentos() - VERSÃO CORRIGIDA
   Future<void> _saveMedicamentos() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -88,9 +89,10 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
       await prefs.setStringList('medicamentos', medicamentosJson);
 
-      // Envia JSON completo para o ESP32
+      // ✅ ENVIA JSON COMPLETO PARA O ESP32
       if (_mqttConnected) {
         await _mqttService.enviarMedicamentos(medicamentos);
+        print('✅ Medicamentos enviados para o ESP32 via MQTT!');
       }
 
       print('💾 Medicamentos salvos com sucesso');
@@ -114,8 +116,6 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
     print('✅ Todas as notificações foram reagendadas!');
   }
 
-
-
   Future<void> _connectMqtt() async {
     setState(() {
       _statusConnection = 'Conectando...';
@@ -123,7 +123,7 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
 
     // IMPORTANTE: Substitua pelo IP do seu broker MQTT
     final connected = await _mqttService.connect(
-      broker: '192.168.1.100', // ← COLOQUE O IP DO SEU BROKER AQUI
+      broker: 'broker.hivemq.com', // ✅ USANDO BROKER PÚBLICO
       port: 1883,
     );
 
@@ -220,8 +220,8 @@ class _MedicamentosScreenState extends State<MedicamentosScreen> {
                               padding: const EdgeInsets.only(bottom: 12),
                               child: MedicamentoCard(
                                 medicamento: medicamentos[index],
-                                indice: index, // ✅ PASSA O ÍNDICE
-                                onDoseTomada: _onDoseTomada, // ✅ PASSA O CALLBACK
+                                indice: index,
+                                onDoseTomada: _onDoseTomada,
                               ),
                             ),
                           );
